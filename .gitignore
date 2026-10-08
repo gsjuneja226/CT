@@ -1,0 +1,46 @@
+# CampuShare
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+venv-new/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Results / outputs
+results/
+*.zip
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Test artifacts
+test-results.xml
+htmlcov/
+.coverage
+.github

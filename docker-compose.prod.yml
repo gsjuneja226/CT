@@ -1,0 +1,54 @@
+# CampuShare Production Orchestration
+# ===================================
+# Provides overrides for the base docker-compose.yml to optimize 
+# for stability, performance, and security in a production environment.
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Key Differences:
+# - Uses pre-built images from a registry instead of local builds.
+# - Disables hot-reloading and enables multiple worker processes (4) for the API.
+# - Ensures 'always' restart policies for all critical services.
+# - Implements persistent storage for results and database data using managed volumes.
+
+version: "3.9"
+
+services:
+  # API Scheduler (Production)
+  backend:
+    image: ${DOCKER_USERNAME}/campushare-backend:latest
+    restart: always
+    # Enable multiple workers for concurrent request handling
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+    volumes:
+      - results_data:/app/results
+    environment:
+      - RESULTS_DIR=/app/results
+
+  # Web Dashboard (Production)
+  frontend:
+    image: ${DOCKER_USERNAME}/campushare-frontend:latest
+    restart: always
+
+  # Relational Store (Production)
+  postgres:
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Note: Initial schema creation volume is removed for security. 
+    # Use manual migrations in production.
+
+  # Message Broker (Production)
+  redis:
+    restart: always
+    # Enable Append Only File (AOF) for data persistence
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  results_data:
+

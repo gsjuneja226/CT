@@ -1,0 +1,85 @@
+# CampuShare Local Development Stack
+# =================================
+# Orchestrates the core infrastructure required for the distributed 
+# platform to operate on a single machine.
+#
+# Topology:
+# - postgres: Relational store for jobs, nodes, and telemetry.
+# - redis: Message broker for job dispatch and real-time logs.
+# - registry: Private Docker registry for staging researcher images.
+# - backend: FastAPI server (UVicorn) with auto-reload.
+# - frontend: React dashboard (Vite/Nginx).
+
+version: "3.9"
+
+services:
+  # Relational Database: PostgreSQL
+  # Automatically bootstraps the schema via backend/schema.sql
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: campushare
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d campushare"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Message Broker & Log Tail: Redis
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Private Container Registry
+  # Research images are pushed here before being dispatched to nodes.
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    ports: ["5000:5000"]
+    volumes:
+      - registry_data:/var/lib/registry
+
+  # Core API & Scheduler: Backend
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - ./backend:/app
+      - ./results:/app/results
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Web Dashboard: Frontend
+  # Maps to port 3000 for local access.
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports: ["3000:80"]
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000
+
+volumes:
+  postgres_data:
+  registry_data:
