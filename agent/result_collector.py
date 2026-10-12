@@ -59,7 +59,7 @@ def ship_result(job: dict, exit_code: int, container, volume_name: str, node_tok
 
             # Determine the actual root of the extracted output
             output_subdir = os.path.join(tmp_dir, "output")
-            if os.path.exists(output_subdir):
+            if os.path.exists(output_subdir) and os.listdir(output_subdir):
                 source_dir = output_subdir
             else:
                 source_dir = tmp_dir
@@ -70,11 +70,20 @@ def ship_result(job: dict, exit_code: int, container, volume_name: str, node_tok
 
         # ZIP the collected output files
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+            file_count = 0
             for root, dirs, files in os.walk(source_dir):
                 for f in files:
                     filepath = os.path.join(root, f)
                     arcname = os.path.relpath(filepath, source_dir)
                     z.write(filepath, arcname)
+                    file_count += 1
+            
+            # Fallback: create info.txt if no files were found in output directory
+            if file_count == 0:
+                fallback_file = os.path.join(tmp_dir, "job_summary.txt")
+                with open(fallback_file, "w") as f:
+                    f.write(f"Job ID: {job_id}\nStatus: Completed (Exit Code {exit_code})\nNote: No explicit output files were generated in /job/output.\n")
+                z.write(fallback_file, "job_summary.txt")
 
         print(f"[collector] Zipped output: {zip_path} ({os.path.getsize(zip_path)} bytes)")
 

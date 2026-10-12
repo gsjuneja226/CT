@@ -63,6 +63,9 @@ services:
       redis:
         condition: service_healthy
     env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://admin:secret@postgres:5432/campushare
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./backend:/app
       - ./results:/app/results

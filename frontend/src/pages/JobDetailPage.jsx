@@ -45,16 +45,16 @@ function LiveLogs({ logs }) {
     <div className="h-96 bg-white border-t border-slate-200 overflow-y-auto p-6 font-mono text-[13px] text-slate-700 leading-relaxed scroll-smooth shadow-inner custom-scrollbar relative">
       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
       {logs.map((log, i) => {
-        // Simple heuristic for highlighting log severity
-        const isError = log.includes('ERROR') || log.includes('Exception')
-        const isWarning = log.includes('WARN')
+        const str = typeof log === 'string' ? log : (log ? JSON.stringify(log) : '')
+        const isError = str.includes('ERROR') || str.includes('Exception')
+        const isWarning = str.includes('WARN')
         return (
           <div key={i} className={`py-1 hover:bg-slate-100 transition-colors flex gap-4 ${
             isError ? 'text-red-700 bg-red-50/50' : 
             isWarning ? 'text-amber-700 bg-amber-50/50' : ''
           }`}>
             <span className="text-slate-400 min-w-[40px] text-right select-none opacity-50 font-bold">{i+1}</span>
-            <span className="whitespace-pre-wrap">{log}</span>
+            <span className="whitespace-pre-wrap">{str}</span>
           </div>
         )
       })}
@@ -91,6 +91,8 @@ function StatItem({ icon: Icon, label, value }) {
  * Shows the status and node assignment for every chunk in a multi-node workload.
  */
 function ChunkGrid({ chunks }) {
+  const doneCount = chunks.filter(c => c.status === 'done').length
+  const isAllDone = chunks.length > 0 && doneCount === chunks.length
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.5 }}
@@ -100,30 +102,42 @@ function ChunkGrid({ chunks }) {
         <h2 className="text-[12px] font-black text-slate-500 uppercase tracking-[0.3em] flex items-center gap-3">
           <Activity size={16} className="text-slate-500" />
           Real-time execution shards
-          <Badge color="blue">{chunks.length} active</Badge>
+          <Badge color={isAllDone ? "emerald" : "blue"}>
+            {isAllDone ? `${chunks.length} complete` : `${doneCount}/${chunks.length} complete`}
+          </Badge>
         </h2>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-[2px] bg-slate-200 p-[2px]">
-        {chunks.map((chunk, i) => (
-          <div key={i} className="bg-white p-5 flex flex-col justify-between group hover:bg-slate-50 transition-all relative">
-            <div className="mb-5">
-              <div className="flex items-center justify-between mb-3">
-                 <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-black">Shard {String(chunk.chunk_index).padStart(2, '0')}</p>
-                 {chunk.status === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
+        {chunks.map((chunk, i) => {
+          let shardLabel = 'DEFAULT_RUNTIME'
+          if (chunk.params) {
+            if (chunk.params.CHUNK_START !== undefined && chunk.params.CHUNK_END !== undefined) {
+              shardLabel = `ROWS ${chunk.params.CHUNK_START} – ${chunk.params.CHUNK_END}`
+            } else if (typeof chunk.params === 'object' && Object.keys(chunk.params).length > 0) {
+              shardLabel = Object.entries(chunk.params).map(([k, v]) => `${k}=${v}`).join(', ')
+            }
+          }
+          return (
+            <div key={i} className="bg-white p-5 flex flex-col justify-between group hover:bg-slate-50 transition-all relative">
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-3">
+                   <p className="text-[10px] text-slate-500 uppercase tracking-[0.2em] font-black">Shard {String(chunk.chunk_index).padStart(2, '0')}</p>
+                   {chunk.status === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-[11px] font-mono text-slate-600 overflow-hidden shadow-inner">
+                   <div className="truncate opacity-70 group-hover:opacity-100 transition-opacity uppercase font-bold tracking-tighter" title={shardLabel}>
+                      {shardLabel}
+                   </div>
+                </div>
               </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-[11px] font-mono text-slate-600 overflow-hidden shadow-inner">
-                 <div className="truncate opacity-70 group-hover:opacity-100 transition-opacity uppercase font-bold tracking-tighter">
-                    {JSON.stringify(chunk.params || {}).replace(/[{}]/g, '') || 'DEFAULT_RUNTIME'}
-                 </div>
+              <div className="flex items-center justify-between mt-auto">
+                 <span className="text-[11px] text-slate-500 font-black font-mono tracking-tighter uppercase">{chunk.node_id ? `NODE_${String(chunk.node_id).slice(0,6).toUpperCase()}` : 'unassigned'}</span>
+                 <StatusBadge status={chunk.status} />
               </div>
             </div>
-            <div className="flex items-center justify-between mt-auto">
-               <span className="text-[11px] text-slate-500 font-black font-mono tracking-tighter uppercase">{chunk.node_id ? `NODE_${chunk.node_id.slice(0,6).toUpperCase()}` : 'unassigned'}</span>
-               <StatusBadge status={chunk.status} />
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </motion.div>
   )
@@ -137,6 +151,19 @@ export default function JobDetailPage() {
   
   // Dynamic streaming data from the WebSocket worker
   const { logs: socketLogs, socketStatus } = useJobSocket(id)
+
+  // Merge historical logs with new live socket logs (Hook MUST run before any early returns)
+  const displayLogs = React.useMemo(() => {
+    const historical = job?.logs || []
+    if (!socketLogs || socketLogs.length === 0) return historical
+    const combined = [...historical]
+    for (const log of socketLogs) {
+      if (!combined.includes(log)) {
+        combined.push(log)
+      }
+    }
+    return combined
+  }, [job?.logs, socketLogs])
 
   /**
    * Fetches results as a binary blob and triggers a browser-level download.
@@ -180,9 +207,6 @@ export default function JobDetailPage() {
     )
   }
 
-  // Prefer live WebSocket logs over static historical logs if available
-  const displayLogs = socketLogs.length > 0 ? socketLogs : (job.logs || [])
-
   return (
     <motion.div 
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}
@@ -225,10 +249,10 @@ export default function JobDetailPage() {
 
       {/* Static Configuration Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatItem icon={Cpu} label="CPU Allotment" value={`${job.cpu} CORE`} />
-        <StatItem icon={HardDrive} label="RAM Quota" value={job.memory.toUpperCase()} />
-        <StatItem icon={Clock} label="TTL Limit" value={`${job.timeout_seconds}s`} />
-        <StatItem icon={TerminalSquare} label="Shard Node" value={job.node_id?.toUpperCase().slice(0, 8) || 'ORCHESTRATING...'} />
+        <StatItem icon={Cpu} label="CPU Allotment" value={`${job.cpu || 1} CORE`} />
+        <StatItem icon={HardDrive} label="RAM Quota" value={job.memory ? job.memory.toUpperCase() : '—'} />
+        <StatItem icon={Clock} label="TTL Limit" value={`${job.timeout_seconds || 3600}s`} />
+        <StatItem icon={TerminalSquare} label="Shard Node" value={job.node_id ? job.node_id.slice(0, 8).toUpperCase() : (job.total_chunks ? `${job.total_chunks} SHARDS` : 'ORCHESTRATING...')} />
       </div>
 
       {/* Logs Terminal Overlay */}

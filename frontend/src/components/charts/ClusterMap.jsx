@@ -20,7 +20,7 @@ export default function ClusterMap({ nodes, jobs }) {
   const packets = useMemo(() => {
     if (!jobs || !activeNodes.length) return [];
     return jobs.filter(j => j.status === 'running' || j.status === 'dispatched').map((job) => {
-      const targetNode = activeNodes.find(n => n.id === job.node_id) || activeNodes[0];
+      const targetNode = activeNodes.find(n => (n.id || n.node_id) === job.node_id) || activeNodes[0];
       return {
         id: job.id,
         startX: 400,
@@ -93,48 +93,54 @@ export default function ClusterMap({ nodes, jobs }) {
         })}
 
         {/* Worker Nodes */}
-        {activeNodes.map(node => (
-          <g key={node.id}>
-            {/* Direct Line to center */}
-            <line x1="400" y1="200" x2={node.cx} y2={node.cy} stroke="rgba(255, 255, 255, 0.05)" strokeWidth="1" />
+        {activeNodes.map(node => {
+          const nodeId = node.id || node.node_id || 'NODE';
+          return (
+            <g key={nodeId}>
+              {/* Direct Line to center */}
+              <line x1="400" y1="200" x2={node.cx} y2={node.cy} stroke="rgba(255, 255, 255, 0.05)" strokeWidth="1" />
 
-            {/* Node Rings */}
-            <circle cx={node.cx} cy={node.cy} r="18" fill="rgba(59, 130, 246, 0.02)" stroke="#3B82F6" strokeWidth="0.5" strokeDasharray="2 4" className="animate-[spin_15s_linear_infinite]" style={{ transformOrigin: `${node.cx}px ${node.cy}px` }} />
-            <circle cx={node.cx} cy={node.cy} r="12" fill="#FFFFFF" stroke="#3B82F6" strokeWidth="1.5" />
-            <circle cx={node.cx} cy={node.cy} r="3" fill="#3B82F6" className="animate-pulse" />
-          </g>
-        ))}
+              {/* Node Rings */}
+              <circle cx={node.cx} cy={node.cy} r="18" fill="rgba(59, 130, 246, 0.02)" stroke="#3B82F6" strokeWidth="0.5" strokeDasharray="2 4" className="animate-[spin_15s_linear_infinite]" style={{ transformOrigin: `${node.cx}px ${node.cy}px` }} />
+              <circle cx={node.cx} cy={node.cy} r="12" fill="#FFFFFF" stroke="#3B82F6" strokeWidth="1.5" />
+              <circle cx={node.cx} cy={node.cy} r="3" fill="#3B82F6" className="animate-pulse" />
+            </g>
+          );
+        })}
       </svg>
 
       {/* HTML Overlays for Telemetry */}
       <div className="absolute inset-0 w-full h-full pointer-events-none" style={{ maxWidth: 800, margin: '0 auto', position: 'relative' }}>
-        {activeNodes.map(node => (
-          <motion.div
-            key={`label-${node.id}`}
-            className="absolute flex flex-col items-center bg-white/80 backdrop-blur-md border border-slate-200 p-2 rounded-lg shadow-sm"
-            style={{ left: node.cx - 40, top: node.cy + 25, width: 80 }}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <div className="text-[10px] font-mono text-primary font-bold mb-1.5">{node.id.slice(0, 8)}</div>
+        {activeNodes.map(node => {
+          const nodeId = node.id || node.node_id || 'NODE';
+          return (
+            <motion.div
+              key={`label-${nodeId}`}
+              className="absolute flex flex-col items-center bg-white/80 backdrop-blur-md border border-slate-200 p-2 rounded-lg shadow-sm"
+              style={{ left: node.cx - 40, top: node.cy + 25, width: 80 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <div className="text-[10px] font-mono text-primary font-bold mb-1.5">{String(nodeId).slice(0, 8)}</div>
 
-            {/* Dials / Bars */}
-            <div className="w-full space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[8px] text-text-muted w-4 font-black">CPU</span>
-                <div className="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${node.cpuUsage}%` }} />
+              {/* Dials / Bars */}
+              <div className="w-full space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[8px] text-text-muted w-4 font-black">CPU</span>
+                  <div className="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${node.cpuUsage}%` }} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[8px] text-text-muted w-4 font-black">RAM</span>
+                  <div className="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-primary-orange" style={{ width: `${node.ramUsage}%` }} />
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[8px] text-text-muted w-4 font-black">RAM</span>
-                <div className="flex-1 h-1 bg-slate-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-primary-orange" style={{ width: `${node.ramUsage}%` }} />
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
 
       <div className="absolute bottom-12 right-12 bg-white/80 border border-slate-200 p-5 rounded-2xl backdrop-blur-md shadow-sm z-10 pointer-events-auto">

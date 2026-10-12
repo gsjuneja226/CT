@@ -35,17 +35,17 @@ export function useJob(id) {
   return useQuery({
     queryKey: ['job', id],
     queryFn: () => getJob(id),
-    // Poll every 3 seconds so status transitions (queued → dispatched → running → done)
+    // Poll every 1.5 seconds so status transitions (queued → dispatched → running → done)
     // are reflected in the UI even when the WebSocket connection is unavailable.
     // Polling stops automatically once the job reaches a terminal state.
     refetchInterval: (query) => {
       const status = query.state.data?.status
       if (status === 'done' || status === 'failed') return false
-      return 3000
+      return 1500
     },
     refetchIntervalInBackground: true,
-    staleTime: 5000,             // Allow short-lived cache to reduce flicker
-    enabled: !!id,               // Prevent query execution if no ID is provided
+    staleTime: 1000,
+    enabled: !!id,
   })
 }
 

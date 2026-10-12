@@ -30,13 +30,14 @@ def compute_chunks(split_by: dict) -> List[Dict[str, str]]:
     strategy = split_by.get("strategy")
     n = split_by.get("num_chunks", 1)
 
-    # Strategy 1: Data Parallelism (Numeric Ranges)
-    if strategy == "row_range":
-        total = split_by.get("total_rows", 0)
-        size = total // n
+    # Strategy 1: Distributed or Data Parallelism (Numeric Ranges)
+    if strategy in ("distributed", "concentrated", "row_range") or not strategy:
+        total = split_by.get("total_rows")
+        if total is None:
+            total = 10000
+        size = max(1, total // n)
         chunks = []
         for i in range(n):
-            # Calculate start/end bounds for this partition
             start = i * size
             end = (i + 1) * size if i < n - 1 else total
             chunks.append({
@@ -49,10 +50,11 @@ def compute_chunks(split_by: dict) -> List[Dict[str, str]]:
 
     # Strategy 2: Task Parallelism (Parameter Sweeps)
     if strategy == "param_grid":
-        params = split_by.get("params", [])
+        params = split_by.get("params") or []
+        if not params:
+            return [{"CHUNK_INDEX": str(i), "CHUNK_TOTAL": str(n)} for i in range(n)]
         return [
             {
-                # Serialize the parameter set for the worker to parse
                 "PARAMS": json.dumps(p),
                 "CHUNK_INDEX": str(i),
                 "CHUNK_TOTAL": str(len(params))
@@ -62,8 +64,7 @@ def compute_chunks(split_by: dict) -> List[Dict[str, str]]:
 
     # Strategy 3: Batch Parallelism (File Distribution)
     if strategy == "file_list":
-        files = split_by.get("files", [])
-        # Distribute files using round-robin slicing
+        files = split_by.get("files") or []
         file_chunks = [files[i::n] for i in range(n)]
         return [
             {

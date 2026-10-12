@@ -126,7 +126,7 @@ async def heartbeat(
     # 3. Real-time UI synchronization
     if body.job_id:
         from database import fetchone as db_fetchone
-        job_row = db_fetchone("SELECT created_at FROM jobs WHERE id=%s", (body.job_id,))
+        job_row = db_fetchone("SELECT parent_id, created_at FROM jobs WHERE id=%s", (body.job_id,))
         elapsed = 0
         
         # Calculate uptime for the active task
@@ -139,15 +139,17 @@ async def heartbeat(
                 created = created.replace(tzinfo=tz.utc)
             elapsed = int((now - created).total_seconds())
 
-        # Notify the UI layer immediately
-        await ws_manager.broadcast(body.job_id, {
+        msg = {
             "type": "heartbeat",
             "cpu_used_pct": body.cpu_used_pct,
             "ram_used_mb": body.ram_used_mb,
             "elapsed_seconds": elapsed,
             "node_hostname": node["hostname"],
             "status": body.status
-        })
+        }
+        await ws_manager.broadcast(body.job_id, msg)
+        if job_row and job_row.get("parent_id"):
+            await ws_manager.broadcast(str(job_row["parent_id"]), msg)
 
     return {"ok": True}
 

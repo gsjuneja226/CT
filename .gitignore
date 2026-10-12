@@ -19,16 +19,6 @@ frontend/dist/
 frontend/.vite/
 *.log
 
-# Environment
-.env
-.env.local
-.env.*.local
-!.env.example
-
-# Results / outputs
-results/
-*.zip
-
 # Docker
 .docker/
 
@@ -39,8 +29,17 @@ results/
 *.swo
 .DS_Store
 
+# Environment
+.env
+.env.*
+!.env.example
+agent/.env
+
+# Results / outputs
+results/
+*.zip
+
 # Test artifacts
 test-results.xml
 htmlcov/
 .coverage
-.github

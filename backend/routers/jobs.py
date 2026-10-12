@@ -182,14 +182,16 @@ def get_job(job_id: str, user: dict = Depends(get_current_user)):
     # Enrich with chunk details if applicable
     if d.get("total_chunks"):
         chunks = fetchall("""
-            SELECT chunk_index, status, node_id FROM jobs
+            SELECT chunk_index, status, node_id, env_vars FROM jobs
             WHERE parent_id=%s ORDER BY chunk_index
         """, (d["id"],))
         d["chunks"] = [
             {"chunk_index": c["chunk_index"], "status": c["status"],
-             "node_id": str(c["node_id"]) if c["node_id"] else None}
+             "node_id": str(c["node_id"]) if c["node_id"] else None,
+             "params": c.get("env_vars") or {}}
             for c in (chunks or [])
         ]
+    d["logs"] = get_logs(job_id)
     return d
 
 
@@ -242,6 +244,9 @@ def mark_running(job_id: str, node: dict = Depends(get_node_from_token)):
     """, (job_id,))
     # Sync UI immediately
     ws_manager.broadcast_sync(job_id, {"type": "status_change", "status": "running"})
+    job = fetchone("SELECT parent_id FROM jobs WHERE id=%s", (job_id,))
+    if job and job.get("parent_id"):
+        ws_manager.broadcast_sync(str(job["parent_id"]), {"type": "status_change", "status": "running"})
     return {"ok": True}
 
 
@@ -256,10 +261,17 @@ async def append_logs(
     Logic: Pushes to Redis for polling and broadcasts to WebSockets for live UI view.
     """
     lines = body.get("lines", [])
+    job = fetchone("SELECT parent_id, chunk_index FROM jobs WHERE id=%s", (job_id,))
+    parent_id = str(job["parent_id"]) if job and job.get("parent_id") else None
+    chunk_index = job["chunk_index"] if job and job.get("chunk_index") is not None else None
+
     for line in lines:
         push_log_line(job_id, line)
-        # Real-time relay
         await ws_manager.broadcast(job_id, {"type": "log_line", "line": line})
+        if parent_id:
+            parent_line = f"[Shard {chunk_index:02d}] {line}" if chunk_index is not None else line
+            push_log_line(parent_id, parent_line)
+            await ws_manager.broadcast(parent_id, {"type": "log_line", "line": parent_line})
     return {"ok": True}
 
 
@@ -303,18 +315,17 @@ async def complete_job(
         parent_id = str(job["parent_id"])
         siblings = fetchall("SELECT status FROM jobs WHERE parent_id=%s", (parent_id,))
         
+        # Sync UI state for individual shard completion
+        await ws_manager.broadcast(parent_id, {
+            "type": "chunk_done",
+            "chunk_index": chunk_index,
+            "chunks_complete": sum(1 for s in siblings if s["status"] == "done"),
+            "total": len(siblings)
+        })
+        
         # Are all parallel chunks in a terminal state?
         all_done = all(s["status"] in ("done", "failed") for s in (siblings or []))
-        
         if all_done:
-            # Sync UI state for the master progress bar
-            await ws_manager.broadcast(parent_id, {
-                "type": "chunk_done",
-                "chunk_index": chunk_index,
-                "chunks_complete": sum(1 for s in siblings if s["status"] == "done"),
-                "total": len(siblings)
-            })
-            # Trigger heavy merge operation
             aggregate(parent_id)
     else:
         # Standalone job: Direct completion broadcast
@@ -417,4 +428,4 @@ def delete_job(job_id: str, user: dict = Depends(get_current_user)):
     execute("DELETE FROM results     WHERE job_id=%s", (job_id,))
     execute("DELETE FROM heartbeats  WHERE job_id=%s", (job_id,))
     execute("DELETE FROM jobs        WHERE id=%s",     (job_id,))
-    return {"ok": True}
+    return {"ok": True}

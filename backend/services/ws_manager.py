@@ -23,11 +23,21 @@ class WSManager:
     def __init__(self):
         # Maps job_id -> set of WebSocket instances
         self.connections: Dict[str, Set[WebSocket]] = {}
+        self.loop = None
+
+    def set_loop(self, loop):
+        self.loop = loop
 
     async def connect(self, job_id: str, ws: WebSocket):
         """
         Accepts a new connection and registers it for a specific job lifecycle.
         """
+        import asyncio
+        if not self.loop:
+            try:
+                self.loop = asyncio.get_running_loop()
+            except Exception:
+                pass
         await ws.accept()
         if job_id not in self.connections:
             self.connections[job_id] = set()
@@ -69,16 +79,16 @@ class WSManager:
         """
         import asyncio
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Schedule for future execution if loop is busy
-                asyncio.ensure_future(self.broadcast(job_id, message))
-            else:
-                # Run immediately if loop is idle
-                loop.run_until_complete(self.broadcast(job_id, message))
-        except Exception:
-            # Prevent crashes in background threads if loop dies
-            pass
+            loop = self.loop
+            if not loop or loop.is_closed():
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(self.broadcast(job_id, message), loop)
+        except Exception as e:
+            print(f"[ws_manager] broadcast_sync warning: {e}")
 
 
 # Singleton instance shared across the FastAPI application

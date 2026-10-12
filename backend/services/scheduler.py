@@ -34,24 +34,23 @@ def parse_memory_to_mb(memory_str: str) -> int:
 
 def node_fits_job(node: dict, job: dict) -> bool:
     """
-    Checks if a specific node has enough free capacity to execute the job.
+    Checks if a specific node has hardware capacity to execute the job.
     
     Calculation:
-    - RAM: Absolute free MB >= required MB.
-    - CPU: Relative free % >= required % (calculated against node's total cores).
+    - RAM: Total node RAM MB >= required MB.
+    - CPU: Total node CPU cores >= required CPU cores.
     - GPU: Hardware availability must match the job requirement.
     """
     required_ram = parse_memory_to_mb(job.get("memory", "2g"))
+    required_cpu = job.get("cpu", 1.0)
     total_cpu = node.get("total_cpu", 1)
-    
-    # Calculate what percentage of this specific node's total CPU capacity is needed
-    required_cpu_pct = (job.get("cpu", 1.0) / total_cpu) * 100
+    total_ram = node.get("total_ram_mb", 2048)
 
-    return (
-        node.get("free_cpu_pct", 0) >= required_cpu_pct
-        and node.get("free_ram_mb", 0) >= required_ram
-        and (not job.get("gpu", False) or node.get("has_gpu", False))
-    )
+    has_cpu = total_cpu >= required_cpu
+    has_ram = total_ram >= required_ram
+    has_gpu = not job.get("gpu", False) or node.get("has_gpu", False)
+
+    return has_cpu and has_ram and has_gpu
 
 
 def get_live_nodes():
@@ -96,6 +95,11 @@ def dispatch_to_node(job: dict, node: dict):
         UPDATE jobs SET status='dispatched', node_id=%s, updated_at=NOW()
         WHERE id=%s
     """, (node["node_id"], job["id"]))
+
+    from services.ws_manager import ws_manager
+    ws_manager.broadcast_sync(str(job["id"]), {"type": "status_change", "status": "dispatched"})
+    if job.get("parent_id"):
+        ws_manager.broadcast_sync(str(job["parent_id"]), {"type": "status_change", "status": "dispatched"})
 
 
 def on_new_node(node_id: str):

@@ -40,12 +40,18 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def startup():
+async def startup():
     """
     Bootstrap logic executed before the server begins accepting traffic.
     Initializes the database connection pool and starts the background 
     scheduler thread to poll for jobs to dispatch.
     """
+    import asyncio
+    try:
+        ws_manager.set_loop(asyncio.get_running_loop())
+    except Exception:
+        pass
+
     # 1. Synchronization: Ensure the SQLite/Postgres schema is current.
     init_db()
     
